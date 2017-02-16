@@ -83,6 +83,26 @@ def create_cooccurmat(dirpath, lexiconfile):
 #    print zip(vectorizer.get_feature_names(),np.array(sums)[0].tolist())
 #    return cooccurs.todense()
 
+def load_pairs_by_suff(fname, minpairs=1):
+    pairs_by_suff = {}
+    with open(fname, "r") as f:
+        for line in f:
+            components = line.decode("utf8").split("\t")
+            suff = components[0]
+            root = components[1]
+            deriv = components[2]
+#            suff, root, deriv = line.decode("utf8").split("\t")
+            if suff not in pairs_by_suff:
+                pairs_by_suff[suff] = [(root, deriv)]
+            else:
+                pairs_by_suff[suff].append((root, deriv))
+        dels = set([])
+        for suff, pairs in pairs_by_suff.iteritems():
+            if len(pairs) < minpairs:
+                dels.add(suff)
+        for suff in dels:
+            del pairs_by_suff[suff]
+    return pairs_by_suff
 
 if __name__ == "__main__":
     # python getwordvecs.py /home1/c/cis530/hw1/data/train wordlist.2010.eng.utf8.txt --savemat cooccur.pickle
@@ -93,6 +113,7 @@ if __name__ == "__main__":
     parser.add_argument("lexfile", help="lexicon file")
     parser.add_argument("--savemat", help="pickle the SVD'd cooccurrence matrix")
     parser.add_argument("--loadmat", help="unpickle the SVD'd coccurrence matrix")
+    parser.add_argument("--pairsfile", help="file with pairs derived by affix")
 
     args = parser.parse_args()
 
@@ -104,6 +125,8 @@ if __name__ == "__main__":
     if args.savemat:
         with open(args.savemat, 'wb') as outstream:
             pickle.dump(cooccurmat, outstream)
+
+    pairs_by_suff = load_pairs_by_suff(args.pairsfile, 5)
 
 #    corpus = load_directory_excerpts("/home1/c/cis530/hw1/data/train")
 #    sample = load_file_excerpts("/home1/c/cis530/hw1/data/train/background.txt")
