@@ -6,7 +6,7 @@ from os import listdir
 from os.path import isfile, join, splitext, basename
 from math import log, sqrt
 from collections import defaultdict
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.cross_decomposition import CCA
 from sklearn.decomposition import TruncatedSVD
 from scipy.sparse import lil_matrix
 import pickle
@@ -118,11 +118,6 @@ def create_cooccurmat(dirpath, lexiconfile, filetype=None):
 #    print cooccurmat.shape
 #    print type(cooccurmat)
     return cooccurmat, intvocab
-#    vectorizer = CountVectorizer(ngram_range=(100,100))
-#    cooccurs = vectorizer.fit_transform(samples)
-#    sums = np.sum(cooccurs.todense(),axis=0)
-#    print zip(vectorizer.get_feature_names(),np.array(sums)[0].tolist())
-#    return cooccurs.todense()
 
 def load_pairs_by_suff(fname, minpairs=1):
     pairs_by_suff = {}
@@ -145,6 +140,41 @@ def load_pairs_by_suff(fname, minpairs=1):
         for suff in dels:
             del pairs_by_suff[suff]
     return pairs_by_suff
+
+def get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon):
+    for suff, pairs in pairs_by_suff.iteritems():
+        xrows = [lexicon[pair[0]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        yrows = [lexicon[pair[1]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        if len(xrows) < 2 or len(yrows) < 2:
+            continue
+        numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
+
+        X = cooccurmat[xrows][:]
+        Y = cooccurmat[yrows][:]
+        cca = CCA(n_components=50)
+        try:
+            X_c, Y_c = cca.fit_transform(X, Y)
+            print X_c
+        except np.linalg.linalg.LinAlgError:
+            print "singular matrix error"
+            print "\t", suff
+            print "\t\t", xrows
+            print "\t\t", yrows
+            pass
+        except ValueError:  # https://github.com/scikit-learn/scikit-learn/pull/4420
+            print "inf or NaN error"
+            print "\t", suff
+            print "\t\t", xrows
+            print "\t\t", yrows
+            pass
+
+#        for pair in pairs:
+#            if pair[0] in lexicon and pair[1] in lexicon:
+#                print pair[0], pair[1], "\t", lexicon[pair[0]], lexicon[pair[1]]
+#        numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
+#        if numattested > 100:
+#            print suff, numattested
+
 
 if __name__ == "__main__":
     # python getwordvecs.py /mnt/pollux-new/cis/nlp/data/corpora/brown  wordlist.2010.eng.utf8.txt --loadmat cooccurbrown.pickle --pairsfile morphopairs.txt --loadlex lexicon.pickle 
@@ -178,20 +208,7 @@ if __name__ == "__main__":
 
     pairs_by_suff = load_pairs_by_suff(args.pairsfile, 5)
 
-#    print lexicon
-    for suff, pairs in pairs_by_suff.iteritems():
-        numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
-#        for pair in pairs:
-#            print pair
-        if numattested > 100:
-            print suff, numattested
-    exit()
+    get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon)
 
-
-
-#    corpus = load_directory_excerpts("/home1/c/cis530/hw1/data/train")
-#    sample = load_file_excerpts("/home1/c/cis530/hw1/data/train/background.txt")
-#    print corpus
- #   print sample
-
-    #assume bag of words
+    #
+    
