@@ -8,6 +8,8 @@ from math import log, sqrt
 from collections import defaultdict
 from sklearn.cross_decomposition import CCA
 from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import normalize
 from scipy.sparse import lil_matrix
 import pickle
 import argparse
@@ -111,7 +113,7 @@ def create_cooccurmat(dirpath, lexiconfile, filetype=None):
     else:
         sentences = flatten([load_file_excerpts(f) for f in get_all_files(dirpath)])#[0:20]
     sentvocab, sentvocabfreqs = get_sentencevocab(sentences)
-    intvocab = get_intersectionvocab(lexiconfile, sentvocabfreqs, minfreq=5)
+    intvocab = get_intersectionvocab(lexiconfile, sentvocabfreqs, minfreq=50)
 #    print len(sentvocab)
 #    print len(intvocab)
     cooccurmat = count_cooccur(intvocab, sentvocab, sentences, 50)
@@ -142,7 +144,11 @@ def load_pairs_by_suff(fname, minpairs=1):
     return pairs_by_suff
 
 def get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon):
+    meanerr_by_suff = {}
+    pairerrs_by_suff = {}
     for suff, pairs in pairs_by_suff.iteritems():
+        xwords = [pair[0] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        ywords = [pair[1] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
         xrows = [lexicon[pair[0]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
         yrows = [lexicon[pair[1]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
         if len(xrows) < 2 or len(yrows) < 2:
@@ -151,21 +157,34 @@ def get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon):
 
         X = cooccurmat[xrows][:]
         Y = cooccurmat[yrows][:]
-        cca = CCA(n_components=50)
+        cca = CCA(n_components=40)
         try:
             X_c, Y_c = cca.fit_transform(X, Y)
-            print X_c
+            normedX_c = normalize(X_c, axis=0, norm="l1")
+            normedY_c = normalize(Y_c, axis=0, norm="l1")
+            pairsims = {}
+            for i, word in enumerate(xwords):
+#                print word, 
+#                print ywords[i], 
+                #                print X_c[i,:]
+                #                print Y_c[i,:]
+#                print "\t", cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
+#                pairsims[(word,ywords[i])] = cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
+                pairsims[(word,ywords[i])] = np.linalg.norm(normedX_c[i,:]-normedY_c[i,:])
+            sortedpairs = sorted(pairsims.iteritems(), key = lambda (k,v): (v, k), reverse=True)
+            meanerr_by_suff[suff] = np.mean([pair[1] for pair in sortedpairs])
+            pairerrs_by_suff[suff] = sortedpairs
         except np.linalg.linalg.LinAlgError:
-            print "singular matrix error"
-            print "\t", suff
-            print "\t\t", xrows
-            print "\t\t", yrows
+#            print "singular matrix error"
+#            print "\t", suff
+#            print "\t\t", xrows
+#            print "\t\t", yrows
             pass
         except ValueError:  # https://github.com/scikit-learn/scikit-learn/pull/4420
-            print "inf or NaN error"
-            print "\t", suff
-            print "\t\t", xrows
-            print "\t\t", yrows
+#            print "inf or NaN error"
+#            print "\t", suff
+#            print "\t\t", xrows
+#            print "\t\t", yrows
             pass
 
 #        for pair in pairs:
@@ -174,6 +193,29 @@ def get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon):
 #        numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
 #        if numattested > 100:
 #            print suff, numattested
+    sortedsuffs = sorted(meanerr_by_suff.iteritems(), key = lambda (k,v): (v, k), reverse=True)
+    for suffpair in sortedsuffs:
+        suff = suffpair[0]
+        e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
+        N = len(pairerrs_by_suff[suff])
+        print suff, suffpair[1] , e, e <= (float(N)/log(N))
+        for pair in pairerrs_by_suff[suff]:
+            print "\t", pair[0][0], "\t", pair[0][1], "\t", pair[1]
+        print "\n\n"
+    for suffpair in sortedsuffs:
+        suff = suffpair[0]
+        e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
+        N = len(pairerrs_by_suff[suff])
+        if e <= (float(N)/log(N)):
+            print suff, e <= (float(N)/log(N))
+    print ""
+    for suffpair in sortedsuffs:
+        suff = suffpair[0]
+        e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
+        N = len(pairerrs_by_suff[suff])
+        if e > (float(N)/log(N)):
+            print suff, e <= (float(N)/log(N))
+
 
 
 if __name__ == "__main__":
