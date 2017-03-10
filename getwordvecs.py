@@ -147,72 +147,82 @@ def get_CCA_by_suff(pairs_by_suff, cooccurmat, lexicon):
     meanerr_by_suff = {}
     pairerrs_by_suff = {}
     for suff, pairs in pairs_by_suff.iteritems():
-        xwords = [pair[0] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
-        ywords = [pair[1] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
-        xrows = [lexicon[pair[0]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
-        yrows = [lexicon[pair[1]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
-        if len(xrows) < 2 or len(yrows) < 2:
+        allxwords = [pair[0] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        allywords = [pair[1] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        allxrows = [lexicon[pair[0]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        allyrows = [lexicon[pair[1]] for pair in pairs if pair[0] in lexicon and pair[1] in lexicon]
+        cvalparts = 5
+        if len(allxrows) < cvalparts or len(allyrows) < cvalparts:
             continue
         numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
 
-        X = cooccurmat[xrows][:]
-        Y = cooccurmat[yrows][:]
-        cca = CCA(n_components=40)
-        try:
-            X_c, Y_c = cca.fit_transform(X, Y)
-            normedX_c = normalize(X_c, axis=0, norm="l1")
-            normedY_c = normalize(Y_c, axis=0, norm="l1")
-            pairsims = {}
-            for i, word in enumerate(xwords):
-#                print word, 
-#                print ywords[i], 
-                #                print X_c[i,:]
-                #                print Y_c[i,:]
-#                print "\t", cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
-#                pairsims[(word,ywords[i])] = cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
-                pairsims[(word,ywords[i])] = np.linalg.norm(normedX_c[i,:]-normedY_c[i,:])
-            sortedpairs = sorted(pairsims.iteritems(), key = lambda (k,v): (v, k), reverse=True)
-            meanerr_by_suff[suff] = np.mean([pair[1] for pair in sortedpairs])
-            pairerrs_by_suff[suff] = sortedpairs
-        except np.linalg.linalg.LinAlgError:
-#            print "singular matrix error"
-#            print "\t", suff
-#            print "\t\t", xrows
-#            print "\t\t", yrows
-            pass
-        except ValueError:  # https://github.com/scikit-learn/scikit-learn/pull/4420
-#            print "inf or NaN error"
-#            print "\t", suff
-#            print "\t\t", xrows
-#            print "\t\t", yrows
-            pass
+        pairsims = {}
 
-#        for pair in pairs:
-#            if pair[0] in lexicon and pair[1] in lexicon:
-#                print pair[0], pair[1], "\t", lexicon[pair[0]], lexicon[pair[1]]
-#        numattested = len([1 for pair in pairs if pair[0] in lexicon and pair[1] in lexicon])
-#        if numattested > 100:
-#            print suff, numattested
+        for subs in range(0,cvalparts):
+            xrowstest = allxrows[subs*len(allxrows)/cvalparts:(subs+1)*len(allxrows)/cvalparts]
+            yrowstest = allyrows[subs*len(allyrows)/cvalparts:(subs+1)*len(allyrows)/cvalparts]
+            xrowstrain = allxrows[:subs*len(allxrows)/cvalparts]
+            xrowstrain.extend(allxrows[(subs+1)*len(allxrows)/cvalparts:])
+            yrowstrain = allyrows[:subs*len(allyrows)/cvalparts]
+            yrowstrain.extend(allyrows[(subs+1)*len(allyrows)/cvalparts:])
+            xwordstest = allxwords[subs*len(allxwords)/cvalparts:(subs+1)*len(allxwords)/cvalparts]
+            ywordstest = allywords[subs*len(allywords)/cvalparts:(subs+1)*len(allywords)/cvalparts]
+            Xtest = cooccurmat[xrowstest][:]
+            Ytest = cooccurmat[yrowstest][:]
+            Xtrain = cooccurmat[xrowstrain][:]
+            Ytrain = cooccurmat[yrowstrain][:]
+            cca = CCA(n_components=40)
+            try:
+                cca.fit(Xtrain, Ytrain)
+                X_c, Y_c = cca.transform(Xtest, Ytest)
+                normedX_c = normalize(X_c, axis=0, norm="l2")
+                normedY_c = normalize(Y_c, axis=0, norm="l2")
+                for i, word in enumerate(xwordstest):
+    #                print ywords[i], 
+                    #                print X_c[i,:]
+                    #                print Y_c[i,:]
+    #                print "\t", cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
+    #                pairsims[(word,ywords[i])] = cosine_similarity(X_c[i,:],Y_c[i,:])[0,0]
+                    pairsims[(word,ywordstest[i])] = np.linalg.norm(normedX_c[i,:]-normedY_c[i,:])
+            except np.linalg.linalg.LinAlgError:
+    #            print "singular matrix error"
+                pass
+            except ValueError:  # https://github.com/scikit-learn/scikit-learn/pull/4420
+#            print "inf or NaN error"
+                pass
+        sortedpairs = sorted(pairsims.iteritems(), key = lambda (k,v): (v, k), reverse=True)
+        meanerr_by_suff[suff] = np.mean([pair[1] for pair in sortedpairs])
+        pairerrs_by_suff[suff] = sortedpairs
+
+
     sortedsuffs = sorted(meanerr_by_suff.iteritems(), key = lambda (k,v): (v, k), reverse=True)
     for suffpair in sortedsuffs:
         suff = suffpair[0]
         e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
         N = len(pairerrs_by_suff[suff])
-        print suff, suffpair[1] , e, e <= (float(N)/log(N))
+        if N <= 1:
+            continue
+        print suff, suffpair[1]# , e, e <= (float(N)/log(N))
         for pair in pairerrs_by_suff[suff]:
             print "\t", pair[0][0], "\t", pair[0][1], "\t", pair[1]
         print "\n\n"
     for suffpair in sortedsuffs:
+        break
         suff = suffpair[0]
         e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
         N = len(pairerrs_by_suff[suff])
+        if N == 0:
+            continue
         if e <= (float(N)/log(N)):
             print suff, e <= (float(N)/log(N))
     print ""
     for suffpair in sortedsuffs:
+        break
         suff = suffpair[0]
         e = len([pair[1] for pair in pairerrs_by_suff[suff] if pair[1] >= 1])
         N = len(pairerrs_by_suff[suff])
+        if N == 0:
+            continue
         if e > (float(N)/log(N)):
             print suff, e <= (float(N)/log(N))
 
